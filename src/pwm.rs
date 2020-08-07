@@ -81,7 +81,7 @@ use crate::gpio::{Alternate, AF1, AF2, AF3, AF4, AF9};
 // Example: impl Pins<TIM1, C1> for PA8<Alternate<AF1>> { type Channel = Pwm<TIM1, C1>; }
 /// Pins is a trait that marks which GPIO pins may be used as PWM channels; it should not be directly used.
 /// See the device datasheet 'Pin descriptions' chapter for which pins can be used with which timer PWM channels (or look at Implementors)
-pub trait Pins<TIM, CHANNEL> {
+pub trait Pins<TIM, CHANNEL, COMP> {
     type Channel;
 }
 
