@@ -21,6 +21,7 @@
 //!
 //! * [Inter Integrated Circuit (I2C)](crate::i2c)
 //! * [Serial Peripheral Interface (SPI)](crate::spi)
+//! * [Serial Data (USART/UART)](crate::serial)
 //! * [Serial Audio Interface](crate::sai)
 //!
 //! Timing functions
@@ -113,6 +114,8 @@ pub mod adc;
 pub mod dac;
 #[cfg(feature = "device-selected")]
 pub mod delay;
+#[cfg(all(feature = "device-selected", feature = "ethernet"))]
+pub mod ethernet;
 #[cfg(feature = "device-selected")]
 pub mod exti;
 #[cfg(feature = "device-selected")]
