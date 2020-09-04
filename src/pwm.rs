@@ -108,6 +108,13 @@ pub struct ActiveHigh;
 /// Marker struct for active low IO polarity
 pub struct ActiveLow;
 
+/// Left aligned PWM goes active at the start of the PWM period and goes inactive after the duty cycle is complete. This is the default and is supported by all timers.
+pub struct AlignmentLeft;
+/// Right aligned PWM goes inactive at the start of the PWM period and goes active when duty cycle time remains. It is only available on some timers.
+pub struct AlignmentRight;
+/// Center aligned PWM updates twice per PWM period and is active centered around one update and inactive centered around the other update. It is only available on some timers.
+pub struct AlignmentCenter;
+
 /// Pwm represents one PWM channel; it is created by calling TIM?.pwm(...) and lets you control the channel through the PwmPin trait
 pub struct Pwm<TIM, CHANNEL, COMP, POL, NPOL> {
     _channel: PhantomData<CHANNEL>,
@@ -551,6 +558,90 @@ pins! {
         CH4N: []
 }
 
+pub struct PwmBuilder<TIM, PINS, CHANNEL, COMP, ALIGNMENT, WIDTH> {
+    _tim: PhantomData<TIM>,
+    _pins: PhantomData<PINS>,
+    _channel: PhantomData<CHANNEL>,
+    _comp: PhantomData<COMP>,
+    _alignment: PhantomData<ALIGNMENT>,
+    _width: PhantomData<WIDTH>,
+    base_freq: Hertz,
+}
+
+impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGNMENT, u16> where PINS: Pins<TIM1, CHANNEL, COMP> {
+    pub fn finalize(self) -> PINS::Channel {
+        let tim = unsafe { &*TIM1::ptr() };
+        // BDTR: Advanced-control timers
+        // Set CCxP = OCxREF / CCxNP = !OCxREF
+        // Refer to RM0433 Rev 6 - Table 324.
+        tim.bdtr.write(|w| w.moe().enabled());
+
+        tim.cr1.write(|w| w.cen().enabled());
+
+        unsafe { MaybeUninit::<PINS::Channel>::uninit().assume_init() }
+    }
+
+    pub fn with_deadtime(self, deadtime_ns: u32) -> Self {
+        let tim = unsafe { &*TIM1::ptr() };
+
+        let freq = self.base_freq.0;
+
+        // tDTS is based on tCK_INT which is before the prescaler
+        //let freq = freq / (tim.psc.read().psc().bits() as u32 + 1);
+        
+        let deadtime_ticks = deadtime_ns as u64 * freq as u64 * 3815;
+
+        // TODO finish
+
+        self
+    }
+}
+
+impl<PINS, CHANNEL, COMP> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16> where PINS: Pins<TIM1, CHANNEL, COMP> {
+    pub fn center_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentCenter, u16> {
+        let tim = unsafe { &*TIM1::ptr() };
+
+        // Center aligned needs half the period for the same frequency
+        let period = tim.arr.read().arr().bits();
+
+        tim.arr.write(|w| w.arr().bits(period / 2));
+
+        tim.cr1.write(|w| w.cms().center_aligned3());
+        
+        PwmBuilder {
+            _tim: PhantomData,
+            _pins: PhantomData,
+            _channel: PhantomData,
+            _comp: PhantomData,
+            _alignment: PhantomData,
+            _width: PhantomData,
+            base_freq: self.base_freq,
+        }
+    }
+
+    pub fn right_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentRight, u16> {
+        let tim = unsafe { &*TIM1::ptr() };
+
+        // Right aligned is the same as left, just counting down instead of up
+        tim.cr1.write(|w| w.dir().down());
+        
+        PwmBuilder {
+            _tim: PhantomData,
+            _pins: PhantomData,
+            _channel: PhantomData,
+            _comp: PhantomData,
+            _alignment: PhantomData,
+            _width: PhantomData,
+            base_freq: self.base_freq,
+        }
+    }
+
+    pub fn left_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16> {
+        self
+    }
+}
+
+
 // PwmExt trait
 /// Allows the pwm() method to be added to the peripheral register structs from the device crate
 pub trait PwmExt: Sized {
@@ -568,52 +659,67 @@ pub trait PwmExt: Sized {
         T: Into<Hertz>;
 }
 
-/// Adds functions to enable center aligned PWM
-pub trait PwmCenterExt: Sized {
+pub trait PwmAdvExt: Sized {
     type Rec: ResetEnable;
 
-    fn pwm_center<PINS, T, U, V>(
+    fn advanced_pwm<PINS, CHANNEL, COMP, T>(
         self,
         _pins: PINS,
         frequency: T,
         prec: Self::Rec,
         clocks: &CoreClocks,
-    ) -> PINS::Channel
+    ) -> PwmBuilder<Self, PINS, CHANNEL, COMP, AlignmentLeft, u16>
     where
-        PINS: Pins<Self, U, V>,
+        PINS: Pins<Self, CHANNEL, COMP>,
         T: Into<Hertz>;
 }
 
-/// Adds functions for complementary PWM, dead time, and break/fault inputs (have BDTR)
-pub trait PwmFaultExt: Sized {
-    type Rec: ResetEnable;
+impl PwmAdvExt for TIM1 {
+    type Rec = rec::Tim1;
 
-    fn pwm_complementary<PINS, T, U, V, W>(
+    fn advanced_pwm<PINS, CHANNEL, COMP, T>(
         self,
         _pins: PINS,
-        frequency: T,
+        freq: T,
         prec: Self::Rec,
         clocks: &CoreClocks,
-        deadtime: W,
-    ) -> PINS::Channel
+    ) -> PwmBuilder<Self, PINS, CHANNEL, COMP, AlignmentLeft, u16>
     where
-        PINS: Pins<Self, U, V>,
+        PINS: Pins<Self, CHANNEL, COMP>,
         T: Into<Hertz>,
-        W: Into<NanoSeconds>;
+    {
+        prec.enable().reset();
 
-    fn pwm_fault_complementary<PINS, T, U, V, W>(
-        self,
-        _pins: PINS,
-        frequency: T,
-        prec: Self::Rec,
-        clocks: &CoreClocks,
-        deadtime: W, // TODO add fault pin and active level
-    ) -> PINS::Channel
-    // TODO add FaultMonitor
-    where
-        PINS: Pins<Self, U, V>,
-        T: Into<Hertz>,
-        W: Into<NanoSeconds>;
+        let clk = TIM1::get_clk(clocks)
+            .expect("Timer input clock not running!")
+            .0;
+        let freq: Hertz = freq.into();
+        let reload: u32 = clk / freq.0; // u32
+
+        let prescale = {
+            // Division factor is (PSC + 1)
+            let prescale = (reload - 1) / (1 << 16);
+            assert!(prescale <= 0xFFFF);
+            prescale
+        };
+
+        // Write prescale
+        self.psc.write(|w| w.psc().bits(prescale as u16));
+
+        // Set TOP value
+        let top = reload / (prescale + 1);
+        self.arr.write(|w| { w.arr().bits(top as u16) } );
+
+        PwmBuilder {
+            _tim: PhantomData,
+            _pins: PhantomData,
+            _channel: PhantomData,
+            _comp: PhantomData,
+            _alignment: PhantomData,
+            _width: PhantomData,
+            base_freq: freq,
+        }
+    }
 }
 
 // Implement PwmExt trait for timer
