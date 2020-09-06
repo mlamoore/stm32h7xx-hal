@@ -581,7 +581,7 @@ impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGN
         unsafe { MaybeUninit::<PINS::Channel>::uninit().assume_init() }
     }
 
-    pub fn with_deadtime(self, deadtime_ns: u32) -> Self {
+    pub fn with_deadtime(self, deadtime: NanoSeconds) -> Self {
         let tim = unsafe { &*TIM1::ptr() };
 
         let freq = self.base_freq.0;
@@ -589,9 +589,25 @@ impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGN
         // tDTS is based on tCK_INT which is before the prescaler
         //let freq = freq / (tim.psc.read().psc().bits() as u32 + 1);
         
-        let deadtime_ticks = deadtime_ns as u64 * freq as u64 * 3815;
+        // ticks = ns * GHz = ns * Hz / 1e9
+        // deadtime.0 could be tens to thousands of ns
+        // freq could be up to 240,000,000 Hz
+        // Need to avoid overflow
+        // Cortex-M7 has 32x32->64 multiply but no 64-bit divide
+        // Multiply by 67109 then shift by 26 to divide by 1000 with almost no error
+        assert!( deadtime.0 <= 1_100_000);
+        let deadtime_ticks = deadtime.0 as u64 * freq as u64 * 4295;
+        let deadtime_ticks = deadtime_ticks >> 32;
+        let deadtime_ticks = deadtime_ticks * 67109;
+        let deadtime_ticks = deadtime_ticks >> 26;
+        
+        assert!( deadtime_ticks <= 4032 );
+
+        let deadtime_ticks = deadtime_ticks as u32;
 
         // TODO finish
+        // Choose CR1 CKD divider of 1, 2, or 4 to determine tDTS
+        // Choose BDTR DTG bits to match deadtime_ticks
 
         self
     }
