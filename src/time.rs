@@ -1,6 +1,7 @@
 //! Time units
 
 use core::fmt;
+use core::time::Duration;
 use cortex_m::peripheral::DWT;
 
 /// Bits per second
@@ -122,6 +123,12 @@ impl U32Ext for u32 {
 }
 
 // Unit conversions
+impl Into<Hertz> for Bps {
+    fn into(self) -> Hertz {
+        Hertz(self.0)
+    }
+}
+
 impl Into<Hertz> for KiloHertz {
     fn into(self) -> Hertz {
         Hertz(self.0 * 1_000)
@@ -171,6 +178,27 @@ impl Into<Hertz> for MilliSeconds {
         let period = self.0;
         assert!(period != 0 && period <= 1_000);
         Hertz(1_000 / period)
+    }
+}
+
+// Into core::time::Duration
+impl Into<Duration> for MilliSeconds {
+    fn into(self) -> Duration {
+        Duration::from_millis(self.0 as u64)
+    }
+}
+
+// Into core::time::Duration
+impl Into<Duration> for MicroSeconds {
+    fn into(self) -> Duration {
+        Duration::from_micros(self.0 as u64)
+    }
+}
+
+// Into core::time::Duration
+impl Into<Duration> for NanoSeconds {
+    fn into(self) -> Duration {
+        Duration::from_nanos(self.0 as u64)
     }
 }
 

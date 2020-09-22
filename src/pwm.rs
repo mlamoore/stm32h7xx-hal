@@ -568,7 +568,11 @@ pub struct PwmBuilder<TIM, PINS, CHANNEL, COMP, ALIGNMENT, WIDTH> {
     base_freq: Hertz,
 }
 
-impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGNMENT, u16> where PINS: Pins<TIM1, CHANNEL, COMP> {
+impl<PINS, CHANNEL, COMP, ALIGNMENT>
+    PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGNMENT, u16>
+where
+    PINS: Pins<TIM1, CHANNEL, COMP>,
+{
     pub fn finalize(self) -> PINS::Channel {
         let tim = unsafe { &*TIM1::ptr() };
         // BDTR: Advanced-control timers
@@ -587,21 +591,21 @@ impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGN
         let freq = self.base_freq.0;
 
         // tDTS is based on tCK_INT which is before the prescaler
-        //let freq = freq / (tim.psc.read().psc().bits() as u32 + 1);
-        
+
         // ticks = ns * GHz = ns * Hz / 1e9
         // deadtime.0 could be tens to thousands of ns
         // freq could be up to 240,000,000 Hz
-        // Need to avoid overflow
+        // Need to avoid overflow but don't want to divide down frequency in case of non-integer-MHz frequency
         // Cortex-M7 has 32x32->64 multiply but no 64-bit divide
-        // Multiply by 67109 then shift by 26 to divide by 1000 with almost no error
-        assert!( deadtime.0 <= 1_100_000);
-        let deadtime_ticks = deadtime.0 as u64 * freq as u64 * 4295;
-        let deadtime_ticks = deadtime_ticks >> 32;
-        let deadtime_ticks = deadtime_ticks * 67109;
-        let deadtime_ticks = deadtime_ticks >> 26;
-        
-        assert!( deadtime_ticks <= 4032 );
+        // Divide by 100000 then 10000 by multiplying and shifting
+        assert!(deadtime.0 <= 1_789_556);
+        let deadtime_ticks = deadtime.0 as u64 * freq as u64;
+        let deadtime_ticks = deadtime_ticks * 42950;
+        let deadtime_ticks = (deadtime_ticks >> 32) as u32;
+        let deadtime_ticks = deadtime_ticks as u64 * 429497;
+        let deadtime_ticks = (deadtime_ticks >> 32) as u32;
+
+        assert!(deadtime_ticks <= 4032);
 
         let deadtime_ticks = deadtime_ticks as u32;
 
@@ -613,8 +617,14 @@ impl<PINS, CHANNEL, COMP, ALIGNMENT> PwmBuilder<TIM1, PINS, CHANNEL, COMP, ALIGN
     }
 }
 
-impl<PINS, CHANNEL, COMP> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16> where PINS: Pins<TIM1, CHANNEL, COMP> {
-    pub fn center_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentCenter, u16> {
+impl<PINS, CHANNEL, COMP>
+    PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16>
+where
+    PINS: Pins<TIM1, CHANNEL, COMP>,
+{
+    pub fn center_aligned(
+        self,
+    ) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentCenter, u16> {
         let tim = unsafe { &*TIM1::ptr() };
 
         // Center aligned needs half the period for the same frequency
@@ -623,7 +633,7 @@ impl<PINS, CHANNEL, COMP> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u
         tim.arr.write(|w| w.arr().bits(period / 2));
 
         tim.cr1.write(|w| w.cms().center_aligned3());
-        
+
         PwmBuilder {
             _tim: PhantomData,
             _pins: PhantomData,
@@ -635,12 +645,14 @@ impl<PINS, CHANNEL, COMP> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u
         }
     }
 
-    pub fn right_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentRight, u16> {
+    pub fn right_aligned(
+        self,
+    ) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentRight, u16> {
         let tim = unsafe { &*TIM1::ptr() };
 
         // Right aligned is the same as left, just counting down instead of up
         tim.cr1.write(|w| w.dir().down());
-        
+
         PwmBuilder {
             _tim: PhantomData,
             _pins: PhantomData,
@@ -652,11 +664,12 @@ impl<PINS, CHANNEL, COMP> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u
         }
     }
 
-    pub fn left_aligned(self) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16> {
+    pub fn left_aligned(
+        self,
+    ) -> PwmBuilder<TIM1, PINS, CHANNEL, COMP, AlignmentLeft, u16> {
         self
     }
 }
-
 
 // PwmExt trait
 /// Allows the pwm() method to be added to the peripheral register structs from the device crate
@@ -724,7 +737,7 @@ impl PwmAdvExt for TIM1 {
 
         // Set TOP value
         let top = reload / (prescale + 1);
-        self.arr.write(|w| { w.arr().bits(top as u16) } );
+        self.arr.write(|w| w.arr().bits(top as u16));
 
         PwmBuilder {
             _tim: PhantomData,
