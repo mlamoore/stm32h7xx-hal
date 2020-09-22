@@ -1,11 +1,13 @@
 [package]
 name = "stm32h7xx-hal"
-version = "0.6.0"
+version = "0.7.1"
 authors = ["Andrew Straw <strawman@astraw.com>",
            "Richard Meadows <richard@richard.fish>",
            "Henrik Böving <hargonix@gmail.com>",
            "Jan Adä <jan.adae@outlook.de>",
            "Robert Jördens <rj@quartiq.de>",
+           "Ryan Summers <ryan.summers@vertigo-designs.com>",
+           "Matthew Meyer <mtthw.meyer@gmail.com>",
            "Florian Jung <flo@windfisch.org>"]
 edition = "2018"
 categories = ["embedded", "hardware-support", "no-std"]
@@ -18,7 +20,7 @@ readme = "README.md"
 exclude = [".gitignore"]
 
 [package.metadata.docs.rs]
-features = ["stm32h743", "rt"]
+features = ["stm32h743", "rt", "quadspi", "sdmmc", "fmc", "ethernet", "phy_lan8742a"]
 targets = ["thumbv7em-none-eabihf"]
 
 [dependencies]
@@ -31,10 +33,17 @@ cast = { version = "0.2.3", default-features = false }
 nb = "0.1.2"
 paste = "0.1.18"
 sdio-host = { version = "0.4", optional = true }
+stm32-fmc = { version = "0.2", optional = true }
 
 [dependencies.bare-metal]
 version = "0.2.5"
 features = ["const-fn"]
+
+[dependencies.smoltcp]
+version = "0.6.0"
+default-features = false
+features = ["ethernet", "proto-ipv4", "proto-dhcpv4", "socket-tcp", "socket-raw"]
+optional = true
 
 [dev-dependencies]
 cortex-m-rtic = "0.5.3"
@@ -49,6 +58,11 @@ panic-itm = { version = "~0.4.1" }
 panic-semihosting = { version = "0.5.3" }
 cortex-m-semihosting = { version = "0.3.5" }
 
+[dev-dependencies.smoltcp]
+version = "0.6.0"
+default-features = false
+features = ["ethernet", "proto-ipv4", "proto-ipv6", "socket-raw"]
+
 [features]
 default = ["unproven"]
 unproven = ["embedded-hal/unproven"]
@@ -60,7 +74,11 @@ dsi = []
 cm4 = []
 cm7 = []
 quadspi = []
+fmc = ["stm32-fmc"]
 sdmmc = ["sdio-host"]
+ethernet = ["smoltcp"]
+phy_ksz8081r = []
+phy_lan8742a = []
 rt = ["stm32h7/rt"]
 stm32h742 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
 stm32h743 = ["stm32h7/stm32h743", "device-selected", "singlecore"]
@@ -74,7 +92,6 @@ stm32h747cm7 = ["stm32h7/stm32h747cm7", "device-selected", "revision_v", "dualco
 log-itm = []
 log-rtt = []
 log-semihost  = []
-
 
 [profile.dev]
 codegen-units = 1 # better optimizations
@@ -100,9 +117,25 @@ name = "vos0"
 required-features = ["revision_v"]
 
 [[example]]
+name = "fmc"
+required-features = ["fmc"]
+
+[[example]]
 name = "qspi"
 required-features = ["quadspi"]
 
 [[example]]
 name = "sdmmc"
 required-features = ["sdmmc"]
+
+[[example]]
+name = "ethernet-stm32h747i-disco"
+required-features = ["phy_lan8742a", "rt", "stm32h747cm7", "ethernet"]
+
+[[example]]
+name = "ethernet-rtic-stm32h747i-disco"
+required-features = ["phy_lan8742a", "rt", "stm32h747cm7", "ethernet"]
+
+[[example]]
+name = "ethernet-nucleo-h743zi2"
+required-features = ["phy_lan8742a", "rt", "revision_v", "stm32h743v", "ethernet"]
