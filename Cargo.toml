@@ -1,11 +1,13 @@
 [package]
 name = "stm32h7xx-hal"
-version = "0.6.0"
+version = "0.7.1"
 authors = ["Andrew Straw <strawman@astraw.com>",
            "Richard Meadows <richard@richard.fish>",
            "Henrik Böving <hargonix@gmail.com>",
            "Jan Adä <jan.adae@outlook.de>",
            "Robert Jördens <rj@quartiq.de>",
+           "Ryan Summers <ryan.summers@vertigo-designs.com>",
+           "Matthew Meyer <mtthw.meyer@gmail.com>",
            "Florian Jung <flo@windfisch.org>"]
 edition = "2018"
 categories = ["embedded", "hardware-support", "no-std"]
@@ -18,7 +20,7 @@ readme = "README.md"
 exclude = [".gitignore"]
 
 [package.metadata.docs.rs]
-features = ["stm32h743", "rt", "quadspi", "sdmmc"]
+features = ["stm32h743", "rt", "quadspi", "sdmmc", "fmc", "ethernet", "phy_lan8742a"]
 targets = ["thumbv7em-none-eabihf"]
 
 [dependencies]
@@ -31,6 +33,7 @@ cast = { version = "0.2.3", default-features = false }
 nb = "0.1.2"
 paste = "0.1.18"
 sdio-host = { version = "0.4", optional = true }
+stm32-fmc = { version = "0.2", optional = true }
 
 [dependencies.bare-metal]
 version = "0.2.5"
@@ -71,6 +74,7 @@ dsi = []
 cm4 = []
 cm7 = []
 quadspi = []
+fmc = ["stm32-fmc"]
 sdmmc = ["sdio-host"]
 ethernet = ["smoltcp"]
 phy_ksz8081r = []
@@ -111,6 +115,10 @@ required-features = ["rt"]
 [[example]]
 name = "vos0"
 required-features = ["revision_v"]
+
+[[example]]
+name = "fmc"
+required-features = ["fmc"]
 
 [[example]]
 name = "qspi"

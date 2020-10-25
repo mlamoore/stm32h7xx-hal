@@ -23,6 +23,13 @@
 //! * [Serial Peripheral Interface (SPI)](crate::spi)
 //! * [Serial Data (USART/UART)](crate::serial)
 //! * [Serial Audio Interface](crate::sai)
+//! * [Quad SPI](crate::qspi) Feature gate `qspi`
+//! * [Ethernet](crate::ethernet) Feature gate `ethernet`
+//!
+//! External Memory
+//!
+//! * [Flexible Memory Controller (FMC)](crate::fmc) Feature gate `fmc`
+//! * [SD Card (SDMMC)](crate::sdmmc) Feature gate `sdmmc`
 //!
 //! Timing functions
 //!
@@ -120,6 +127,8 @@ pub mod ethernet;
 pub mod exti;
 #[cfg(feature = "device-selected")]
 pub mod flash;
+#[cfg(all(feature = "device-selected", feature = "fmc"))]
+pub mod fmc;
 #[cfg(feature = "device-selected")]
 pub mod gpio;
 #[cfg(feature = "device-selected")]
