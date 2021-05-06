@@ -63,11 +63,23 @@ fn main() -> ! {
     // We can't use ADC2 here because ccdr.peripheral.ADC12 has been
     // consumed. See examples/adc12.rs
 
-    // Setup GPIOC
+    // Setup GPIOA and GPIOC
+    let gpioa = dp.GPIOA.split(ccdr.peripheral.GPIOA);
     let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
 
     // Configure pc0 as an analog input
     let mut channel = gpioc.pc0.into_analog(); // ANALOG IN 10
+
+    // Configure pa8 as a PWM output
+    let mut pwm = dp.TIM1.pwm(
+        gpioa.pa8.into_alternate_af1(),
+        100.khz(),
+        ccdr.peripheral.TIM1,
+        &ccdr.clocks,
+    );
+
+    pwm.set_duty(pwm.get_max_duty() / 2);
+    pwm.enable();
 
     loop {
         let data: u32 = adc1.read(&mut channel).unwrap();

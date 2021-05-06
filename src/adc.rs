@@ -55,13 +55,16 @@ impl NumberOfBits for Resolution {
     }
 }
 
-/// Enabled ADC (type state)
-pub struct Enabled;
+/// Enabled ADC, not converting (type state)
+pub struct EnabledIdle;
+/// Enabled ADC, injected conversions active (type state)
+pub struct EnabledInjected;
 /// Disabled ADC (type state)
 pub struct Disabled;
 
 pub trait ED {}
-impl ED for Enabled {}
+impl ED for EnabledIdle {}
+impl ED for EnabledInjected {}
 impl ED for Disabled {}
 
 pub struct Adc<ADC, ED> {
@@ -563,6 +566,15 @@ macro_rules! adc_hal {
 
                     self.configure();
 
+                    // Set resolution
+                    self.rb.cfgr.modify(|_, w| unsafe { w.res().bits(self.get_resolution().into()) });
+
+                    // Set LSHIFT[3:0]
+                    self.rb.cfgr2.modify(|_, w| w.lshift().bits(self.get_lshift().value()));
+
+
+                    self.set_smp();
+
                     Adc {
                         rb: self.rb,
                         sample_time: self.sample_time,
@@ -584,30 +596,10 @@ macro_rules! adc_hal {
                     while self.rb.cr.read().jadstp().bit_is_set() {}
                 }
 
-                fn set_chan_smp(&mut self, chan: u8) {
-                    match chan {
-                        0 => self.rb.smpr1.modify(|_, w| w.smp0().bits(self.get_sample_time().into())),
-                        1 => self.rb.smpr1.modify(|_, w| w.smp1().bits(self.get_sample_time().into())),
-                        2 => self.rb.smpr1.modify(|_, w| w.smp2().bits(self.get_sample_time().into())),
-                        3 => self.rb.smpr1.modify(|_, w| w.smp3().bits(self.get_sample_time().into())),
-                        4 => self.rb.smpr1.modify(|_, w| w.smp4().bits(self.get_sample_time().into())),
-                        5 => self.rb.smpr1.modify(|_, w| w.smp5().bits(self.get_sample_time().into())),
-                        6 => self.rb.smpr1.modify(|_, w| w.smp6().bits(self.get_sample_time().into())),
-                        7 => self.rb.smpr1.modify(|_, w| w.smp7().bits(self.get_sample_time().into())),
-                        8 => self.rb.smpr1.modify(|_, w| w.smp8().bits(self.get_sample_time().into())),
-                        9 => self.rb.smpr1.modify(|_, w| w.smp9().bits(self.get_sample_time().into())),
-                        10 => self.rb.smpr2.modify(|_, w| w.smp10().bits(self.get_sample_time().into())),
-                        11 => self.rb.smpr2.modify(|_, w| w.smp11().bits(self.get_sample_time().into())),
-                        12 => self.rb.smpr2.modify(|_, w| w.smp12().bits(self.get_sample_time().into())),
-                        13 => self.rb.smpr2.modify(|_, w| w.smp13().bits(self.get_sample_time().into())),
-                        14 => self.rb.smpr2.modify(|_, w| w.smp14().bits(self.get_sample_time().into())),
-                        15 => self.rb.smpr2.modify(|_, w| w.smp15().bits(self.get_sample_time().into())),
-                        16 => self.rb.smpr2.modify(|_, w| w.smp16().bits(self.get_sample_time().into())),
-                        17 => self.rb.smpr2.modify(|_, w| w.smp17().bits(self.get_sample_time().into())),
-                        18 => self.rb.smpr2.modify(|_, w| w.smp18().bits(self.get_sample_time().into())),
-                        19 => self.rb.smpr2.modify(|_, w| w.smp19().bits(self.get_sample_time().into())),
-                        _ => unreachable!(),
-                    }
+                fn set_smp(&mut self) {
+                    let smpx = self.get_sample_time().into();
+                    self.rb.smpr1.write(|w| w.smp0().bits(smpx).smp1().bits(smpx).smp2().bits(smpx).smp3().bits(smpx).smp4().bits(smpx).smp5().bits(smpx).smp6().bits(smpx).smp7().bits(smpx).smp8().bits(smpx).smp9().bits(smpx));
+                    self.rb.smpr2.write(|w| w.smp10().bits(smpx).smp11().bits(smpx).smp12().bits(smpx).smp13().bits(smpx).smp14().bits(smpx).smp15().bits(smpx).smp16().bits(smpx).smp17().bits(smpx).smp18().bits(smpx).smp19().bits(smpx));
                 }
 
                 // Refer to RM0433 Rev 6 - Chapter 24.4.16
@@ -615,15 +607,11 @@ macro_rules! adc_hal {
                     assert!(chan <= 19);
                     self.check_conversion_conditions();
 
-                    // Set resolution
-                    self.rb.cfgr.modify(|_, w| unsafe { w.res().bits(self.get_resolution().into()) });
-
-                    // Set LSHIFT[3:0]
-                    self.rb.cfgr2.modify(|_, w| w.lshift().bits(self.get_lshift().value()));
-
                     // Select channel (with preselection, refer to RM0433 Rev 6 - Chapter 24.4.12)
+                    // TODO test writing PCSEL while JADSTART is set
                     self.rb.pcsel.modify(|r, w| unsafe { w.pcsel().bits(r.pcsel().bits() | (1 << chan)) });
-                    self.set_chan_smp(chan);
+
+                    // Configure the regular conversion sequence to only convert the desired channel
                     self.rb.sqr1.modify(|_, w| unsafe {
                         w.sq1().bits(chan)
                             .l().bits(0)
@@ -635,22 +623,18 @@ macro_rules! adc_hal {
                     // Wait until conversion finished
                     while self.rb.isr.read().eoc().bit_is_clear() {}
 
-                    // Disable preselection of this channel, refer to RM0433 Rev 6 - Chapter 24.4.12
-                    self.rb.pcsel.modify(|r, w| unsafe { w.pcsel().bits(r.pcsel().bits() & !(1 << chan)) });
-
                     // Retrieve result
                     let result = self.rb.dr.read().bits();
                     result
                 }
 
                 fn check_conversion_conditions(&self) {
-                    // Ensure that no conversions are ongoing
+                    // Ensure that no regular conversions are ongoing
                     if self.rb.cr.read().adstart().bit_is_set() {
                         panic!("Cannot start conversion because a regular conversion is ongoing");
                     }
-                    if self.rb.cr.read().jadstart().bit_is_set() {
-                        panic!("Cannot start conversion because an injected conversion is ongoing");
-                    }
+                    // Starting a regular conversion while injected conversions are ongoing is allowed
+                    // See RM0433 Rev 6 - Chapter 24.4.10
                     // Ensure that the ADC is enabled
                     if self.rb.cr.read().aden().bit_is_clear() {
                         panic!("Cannot start conversion because ADC is currently disabled");
@@ -725,11 +709,17 @@ macro_rules! adc_hal {
                 /// Options can be found in [AdcSampleTime](crate::adc::AdcSampleTime).
                 pub fn set_sample_time(&mut self, t_samp: AdcSampleTime) {
                     self.sample_time = t_samp;
+
+                    // TODO actually set
+                    // TODO don't implement for EnabledInjected
                 }
 
                 /// Set ADC sampling resolution
                 pub fn set_resolution(&mut self, res: Resolution) {
                     self.resolution = res;
+
+                    // TODO actually set
+                    // TODO don't implement for EnabledInjected
                 }
 
                 /// Set ADC lshift
@@ -737,6 +727,9 @@ macro_rules! adc_hal {
                 /// LSHIFT\[3:0\] must be in range of 0..=15
                 pub fn set_lshift(&mut self, lshift: AdcLshift) {
                     self.lshift = lshift;
+
+                    // TODO actually set
+                    // TODO don't implement for EnabledInjected
                 }
 
                 /// Returns the largest possible sample value for the current settings
