@@ -55,6 +55,16 @@ impl NumberOfBits for Resolution {
     }
 }
 
+/// Sequence of channels for a triggered (injected) conversion sequence
+pub trait TriggeredSequence<ADC, CHANNELS> {
+    const LEN: u8;
+    fn jsq1_val() -> u8;
+    fn jsq2_val() -> u8;
+    fn jsq3_val() -> u8;
+    fn jsq4_val() -> u8;
+    fn pcsel_bits() -> u32;
+}
+
 /// Enabled ADC, not converting (type state)
 pub struct EnabledIdle;
 /// Enabled ADC, injected conversions active (type state)
@@ -62,10 +72,27 @@ pub struct EnabledInjected;
 /// Disabled ADC (type state)
 pub struct Disabled;
 
+// Triggered (injected) sequence of length 1 (type state)
+pub struct SeqLen1;
+// Triggered (injected) sequence of length 2 (type state)
+pub struct SeqLen2;
+// Triggered (injected) sequence of length 3 (type state)
+pub struct SeqLen3;
+// Triggered (injected) sequence of length 4 (type state)
+pub struct SeqLen4;
+
 pub trait ED {}
 impl ED for EnabledIdle {}
 impl ED for EnabledInjected {}
 impl ED for Disabled {}
+
+pub trait EDInactive {}
+impl EDInactive for Disabled {}
+impl EDInactive for EnabledIdle {}
+
+pub trait EDEnabled {}
+impl EDEnabled for EnabledIdle {}
+impl EDEnabled for EnabledInjected {}
 
 pub struct Adc<ADC, ED> {
     rb: ADC,
@@ -79,7 +106,7 @@ pub struct Adc<ADC, ED> {
 ///
 /// Options for the sampling time, each is T + 0.5 ADC clock cycles.
 //
-// Refer to RM0433 Rev 6 - Chapter 24.4.13
+// Refer to RM0433 Rev 7 - Chapter 25.4.13
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum AdcSampleTime {
@@ -107,7 +134,7 @@ impl AdcSampleTime {
     }
 }
 
-// Refer to RM0433 Rev 6 - Chapter 24.4.13
+// Refer to RM0433 Rev 7 - Chapter 25.4.13
 impl From<AdcSampleTime> for u8 {
     fn from(val: AdcSampleTime) -> u8 {
         match val {
@@ -304,6 +331,82 @@ adc_internal!(
     Vrefint => (19, vrefen)
 );
 
+impl<ADC, C1: Channel<ADC, ID = u8>> TriggeredSequence<ADC, SeqLen1> for &C1 {
+    const LEN: u8 = 1;
+    fn jsq1_val() -> u8 {
+        C1::channel()
+    }
+    fn jsq2_val() -> u8 {
+        0
+    }
+    fn jsq3_val() -> u8 {
+        0
+    }
+    fn jsq4_val() -> u8 {
+        0
+    }
+    fn pcsel_bits() -> u32 {
+        1 << (C1::channel() as u32)
+    }
+}
+
+impl<ADC, C1: Channel<ADC, ID = u8>, C2: Channel<ADC, ID = u8>> TriggeredSequence<ADC, SeqLen2> for (&C1, &C2) {
+    const LEN: u8 = 2;
+    fn jsq1_val() -> u8 {
+        C1::channel()
+    }
+    fn jsq2_val() -> u8 {
+        C2::channel()
+    }
+    fn jsq3_val() -> u8 {
+        0
+    }
+    fn jsq4_val() -> u8 {
+        0
+    }
+    fn pcsel_bits() -> u32 {
+        1 << C1::channel() | 1 << C2::channel()
+    }
+}
+
+impl<ADC, C1: Channel<ADC, ID = u8>, C2: Channel<ADC, ID = u8>, C3: Channel<ADC, ID = u8>> TriggeredSequence<ADC, SeqLen3> for (&C1, &C2, &C3) {
+    const LEN: u8 = 3;
+    fn jsq1_val() -> u8 {
+        C1::channel()
+    }
+    fn jsq2_val() -> u8 {
+        C2::channel()
+    }
+    fn jsq3_val() -> u8 {
+        C3::channel()
+    }
+    fn jsq4_val() -> u8 {
+        0
+    }
+    fn pcsel_bits() -> u32 {
+        1 << C1::channel() | 1 << C2::channel() | 1 << C3::channel()
+    }
+}
+
+impl<ADC, C1: Channel<ADC, ID = u8>, C2: Channel<ADC, ID = u8>, C3: Channel<ADC, ID = u8>, C4: Channel<ADC, ID = u8>> TriggeredSequence<ADC, SeqLen4> for (&C1, &C2, &C3, &C4) {
+    const LEN: u8 = 4;
+    fn jsq1_val() -> u8 {
+        C1::channel()
+    }
+    fn jsq2_val() -> u8 {
+        C2::channel()
+    }
+    fn jsq3_val() -> u8 {
+        C3::channel()
+    }
+    fn jsq4_val() -> u8 {
+        C4::channel()
+    }
+    fn pcsel_bits() -> u32 {
+        1 << C1::channel() | 1 << C2::channel() | 1 << C3::channel() | 1 << C4::channel()
+    }
+}
+
 pub trait AdcExt<ADC>: Sized {
     type Rec: ResetEnable;
 
@@ -477,7 +580,7 @@ macro_rules! adc_hal {
                 ///
                 /// Note: After power-up, a [`calibration`](#method.calibrate) shall be run
                 pub fn power_up(&mut self, delay: &mut impl DelayUs<u8>) {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.6
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.6
                     self.rb.cr.modify(|_, w|
                         w.deeppwd().clear_bit()
                             .advregen().set_bit()
@@ -489,7 +592,7 @@ macro_rules! adc_hal {
                 ///
                 /// Note: This resets the [`calibration`](#method.calibrate) of the ADC
                 pub fn power_down(&mut self) {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.6
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.6
                     self.rb.cr.modify(|_, w|
                         w.deeppwd().set_bit()
                             .advregen().clear_bit()
@@ -500,7 +603,7 @@ macro_rules! adc_hal {
                 ///
                 /// Note: The ADC must be disabled
                 pub fn calibrate(&mut self) {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.8
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.8
                     self.check_calibration_conditions();
 
                     // single channel (INNx equals to V_ref-)
@@ -540,7 +643,7 @@ macro_rules! adc_hal {
                 /// Configuration process immediately after enabling the ADC
                 fn configure(&mut self) {
                     // Single conversion mode, Software trigger
-                    // Refer to RM0433 Rev 6 - Chapters 24.4.15, 24.4.19
+                    // Refer to RM0433 Rev 7 - Chapters 25.4.15, 25.6.4
                     self.rb.cfgr.modify(|_, w|
                         w.cont().clear_bit()
                             .exten().disabled()
@@ -549,7 +652,7 @@ macro_rules! adc_hal {
 
                     // Enables boost mode for highest possible clock frequency
                     //
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.3
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.3
                     #[cfg(not(feature = "revision_v"))]
                     self.rb.cr.modify(|_, w| w.boost().set_bit());
                     #[cfg(feature = "revision_v")]
@@ -557,8 +660,8 @@ macro_rules! adc_hal {
                 }
 
                 /// Enable ADC
-                pub fn enable(mut self) -> Adc<$ADC, Enabled> {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.9
+                pub fn enable(mut self) -> Adc<$ADC, EnabledIdle> {
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.9
                     self.rb.isr.modify(|_, w| w.adrdy().set_bit());
                     self.rb.cr.modify(|_, w| w.aden().set_bit());
                     while self.rb.isr.read().adrdy().bit_is_clear() {}
@@ -572,7 +675,7 @@ macro_rules! adc_hal {
                     // Set LSHIFT[3:0]
                     self.rb.cfgr2.modify(|_, w| w.lshift().bits(self.get_lshift().value()));
 
-
+                    // Set sample times
                     self.set_smp();
 
                     Adc {
@@ -585,7 +688,61 @@ macro_rules! adc_hal {
                 }
             }
 
-            impl Adc<$ADC, Enabled> {
+            impl Adc<$ADC, EnabledIdle> {
+                /// Begin triggered conversions (injected conversions with the selected trigger)
+                pub fn read_triggered(mut self) -> Adc<$ADC, EnabledInjected> {
+                    // TODO take appropriate arguments, return appropriate types (separate read handle for injected conversions?)
+                    // TODO implement injected conversions
+
+                    Adc {
+                        rb: self.rb,
+                        sample_time: self.sample_time,
+                        resolution: self.resolution,
+                        lshift: self.lshift,
+                        _enabled: PhantomData,
+                    }
+                }
+
+                /// Disable ADC
+                pub fn disable(mut self) -> Adc<$ADC, Disabled> {
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.9
+                    if self.rb.cr.read().adstart().bit_is_set() {
+                        self.stop_regular_conversion();
+                    }
+                    if self.rb.cr.read().jadstart().bit_is_set() {
+                        self.stop_injected_conversion();
+                    }
+
+                    self.rb.cr.modify(|_, w| w.addis().set_bit());
+                    while self.rb.cr.read().aden().bit_is_set() {}
+
+                    Adc {
+                        rb: self.rb,
+                        sample_time: self.sample_time,
+                        resolution: self.resolution,
+                        lshift: self.lshift,
+                        _enabled: PhantomData,
+                    }
+                }
+            }
+
+            impl Adc<$ADC, EnabledInjected> {
+                /// Disable the trigger and stop performing triggered reads of the selected analog channels
+                pub fn stop_triggered_reads(mut self) -> Adc<$ADC, EnabledIdle> {
+                    // TODO stop injected conversions
+                    // TODO take appropriate arguments (consume read token?)
+
+                    Adc {
+                        rb: self.rb,
+                        sample_time: self.sample_time,
+                        resolution: self.resolution,
+                        lshift: self.lshift,
+                        _enabled: PhantomData,
+                    }
+                }
+            }
+
+            impl<ED: EDEnabled> Adc<$ADC, ED> {
                 fn stop_regular_conversion(&mut self) {
                     self.rb.cr.modify(|_, w| w.adstp().set_bit());
                     while self.rb.cr.read().adstp().bit_is_set() {}
@@ -596,18 +753,12 @@ macro_rules! adc_hal {
                     while self.rb.cr.read().jadstp().bit_is_set() {}
                 }
 
-                fn set_smp(&mut self) {
-                    let smpx = self.get_sample_time().into();
-                    self.rb.smpr1.write(|w| w.smp0().bits(smpx).smp1().bits(smpx).smp2().bits(smpx).smp3().bits(smpx).smp4().bits(smpx).smp5().bits(smpx).smp6().bits(smpx).smp7().bits(smpx).smp8().bits(smpx).smp9().bits(smpx));
-                    self.rb.smpr2.write(|w| w.smp10().bits(smpx).smp11().bits(smpx).smp12().bits(smpx).smp13().bits(smpx).smp14().bits(smpx).smp15().bits(smpx).smp16().bits(smpx).smp17().bits(smpx).smp18().bits(smpx).smp19().bits(smpx));
-                }
-
-                // Refer to RM0433 Rev 6 - Chapter 24.4.16
+                // Refer to RM0433 Rev 7 - Chapter 25.4.16
                 fn convert(&mut self, chan: u8) -> u32 {
                     assert!(chan <= 19);
                     self.check_conversion_conditions();
 
-                    // Select channel (with preselection, refer to RM0433 Rev 6 - Chapter 24.4.12)
+                    // Select channel (with preselection, refer to RM0433 Rev 7 - Chapter 25.4.12)
                     // TODO test writing PCSEL while JADSTART is set
                     self.rb.pcsel.modify(|r, w| unsafe { w.pcsel().bits(r.pcsel().bits() | (1 << chan)) });
 
@@ -634,7 +785,7 @@ macro_rules! adc_hal {
                         panic!("Cannot start conversion because a regular conversion is ongoing");
                     }
                     // Starting a regular conversion while injected conversions are ongoing is allowed
-                    // See RM0433 Rev 6 - Chapter 24.4.10
+                    // See RM0433 Rev 7 - Chapter 25.4.10
                     // Ensure that the ADC is enabled
                     if self.rb.cr.read().aden().bit_is_clear() {
                         panic!("Cannot start conversion because ADC is currently disabled");
@@ -643,31 +794,9 @@ macro_rules! adc_hal {
                         panic!("Cannot start conversion because there is a pending request to disable the ADC");
                     }
                 }
-
-                /// Disable ADC
-                pub fn disable(mut self) -> Adc<$ADC, Disabled> {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.9
-                    if self.rb.cr.read().adstart().bit_is_set() {
-                        self.stop_regular_conversion();
-                    }
-                    if self.rb.cr.read().jadstart().bit_is_set() {
-                        self.stop_injected_conversion();
-                    }
-
-                    self.rb.cr.modify(|_, w| w.addis().set_bit());
-                    while self.rb.cr.read().aden().bit_is_set() {}
-
-                    Adc {
-                        rb: self.rb,
-                        sample_time: self.sample_time,
-                        resolution: self.resolution,
-                        lshift: self.lshift,
-                        _enabled: PhantomData,
-                    }
-                }
             }
 
-            impl<ED> Adc<$ADC, ED> {
+            impl<ED: EDInactive> Adc<$ADC, ED> {
                 /// Save current ADC config
                 pub fn save_cfg(&mut self) -> StoredConfig {
                     StoredConfig(self.get_sample_time(), self.get_resolution(), self.get_lshift())
@@ -689,6 +818,50 @@ macro_rules! adc_hal {
                     cfg
                 }
 
+                /// Set ADC sampling time
+                ///
+                /// Options can be found in [AdcSampleTime](crate::adc::AdcSampleTime).
+                pub fn set_sample_time(&mut self, t_samp: AdcSampleTime) {
+                    self.sample_time = t_samp;
+
+                    // Set sample times for all channels
+                    // Only set sample times if ADC is enabled
+                    if self.rb.cr.read().aden().bit_is_set() {
+                        self.set_smp();
+                    }
+                }
+
+                /// Set ADC sampling resolution
+                pub fn set_resolution(&mut self, res: Resolution) {
+                    self.resolution = res;
+
+                    // Set resolution
+                    self.rb.cfgr.modify(|_, w| unsafe { w.res().bits(res.into()) });
+                }
+
+                /// Set ADC lshift
+                ///
+                /// LSHIFT\[3:0\] must be in range of 0..=15
+                pub fn set_lshift(&mut self, lshift: AdcLshift) {
+                    self.lshift = lshift;
+
+                    // Set LSHIFT[3:0]
+                    self.rb.cfgr2.modify(|_, w| w.lshift().bits(lshift.value()));
+                }
+            }
+
+            impl<ED> Adc<$ADC, ED> {
+                // This only makes sense to call for enabled ADC but must be defined here so it can be called during enable()
+                fn set_smp(&mut self) {
+                    let smpx = self.sample_time.into();
+                    self.rb.smpr1.write(|w| w.smp0().bits(smpx).smp1().bits(smpx).smp2().bits(smpx)
+                        .smp3().bits(smpx).smp4().bits(smpx).smp5().bits(smpx).smp6().bits(smpx)
+                        .smp7().bits(smpx).smp8().bits(smpx).smp9().bits(smpx));
+                    self.rb.smpr2.write(|w| w.smp10().bits(smpx).smp11().bits(smpx).smp12().bits(smpx)
+                        .smp13().bits(smpx).smp14().bits(smpx).smp15().bits(smpx).smp16().bits(smpx)
+                        .smp17().bits(smpx).smp18().bits(smpx).smp19().bits(smpx));
+                }
+
                 /// Get ADC samping time
                 pub fn get_sample_time(&self) -> AdcSampleTime {
                     self.sample_time
@@ -704,40 +877,12 @@ macro_rules! adc_hal {
                     self.lshift
                 }
 
-                /// Set ADC sampling time
-                ///
-                /// Options can be found in [AdcSampleTime](crate::adc::AdcSampleTime).
-                pub fn set_sample_time(&mut self, t_samp: AdcSampleTime) {
-                    self.sample_time = t_samp;
-
-                    // TODO actually set
-                    // TODO don't implement for EnabledInjected
-                }
-
-                /// Set ADC sampling resolution
-                pub fn set_resolution(&mut self, res: Resolution) {
-                    self.resolution = res;
-
-                    // TODO actually set
-                    // TODO don't implement for EnabledInjected
-                }
-
-                /// Set ADC lshift
-                ///
-                /// LSHIFT\[3:0\] must be in range of 0..=15
-                pub fn set_lshift(&mut self, lshift: AdcLshift) {
-                    self.lshift = lshift;
-
-                    // TODO actually set
-                    // TODO don't implement for EnabledInjected
-                }
-
                 /// Returns the largest possible sample value for the current settings
                 pub fn max_sample(&self) -> u32 {
                     ((1 << self.get_resolution().number_of_bits() as u32) - 1) << self.get_lshift().value() as u32
                 }
 
-                                /// Returns the offset calibration value for single ended channel
+                /// Returns the offset calibration value for single ended channel
                 pub fn read_offset_calibration_value(&self) -> AdcCalOffset {
                     AdcCalOffset(self.rb.calfact.read().calfact_s().bits())
                 }
@@ -747,7 +892,7 @@ macro_rules! adc_hal {
                 /// ...
                 /// LINCALRDYW6 -> result\[5\]
                 pub fn read_linear_calibration_values(&mut self) -> AdcCalLinear {
-                    // Refer to RM0433 Rev 6 - Chapter 24.4.8 (Page 920)
+                    // Refer to RM0433 Rev 7 - Chapter 25.4.8 (Page 935)
                     self.check_linear_read_conditions();
 
                     // Read 1st block of linear correction
@@ -797,7 +942,7 @@ macro_rules! adc_hal {
                 }
             }
 
-            impl<WORD, PIN> OneShot<$ADC, WORD, PIN> for Adc<$ADC, Enabled>
+            impl<WORD, PIN, ED: EDEnabled> OneShot<$ADC, WORD, PIN> for Adc<$ADC, ED>
             where
                 WORD: From<u32>,
                 PIN: Channel<$ADC, ID = u8>,
