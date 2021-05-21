@@ -32,13 +32,13 @@ fn main() -> ! {
 
     // We need to configure a clock for adc_ker_ck_input. The default
     // adc_ker_ck_input is pll2_p_ck, but we will use per_ck. Here we
-    // set per_ck to 4MHz.
+    // set per_ck to 25MHz.
     //
     // The maximum adc_ker_ck_input frequency is 100MHz for revision V and 36MHz
     // otherwise
     let mut ccdr = rcc
         .sys_ck(100.mhz())
-        .per_ck(4.mhz())
+        .per_ck(25.mhz())
         .freeze(pwrcfg, &dp.SYSCFG);
 
     // Switch adc_ker_ck_input multiplexer to per_ck

@@ -102,6 +102,11 @@ pub struct Adc<ADC, ED> {
     _enabled: PhantomData<ED>,
 }
 
+pub struct AdcTriggeredConversion<ADC, SEQ> {
+    _adc: PhantomData<ADC>,
+    _injected_sequence: PhantomData<SEQ>,
+}
+
 /// ADC sampling time
 ///
 /// Options for the sampling time, each is T + 0.5 ADC clock cycles.
@@ -690,17 +695,20 @@ macro_rules! adc_hal {
 
             impl Adc<$ADC, EnabledIdle> {
                 /// Begin triggered conversions (injected conversions with the selected trigger)
-                pub fn read_triggered(mut self) -> Adc<$ADC, EnabledInjected> {
-                    // TODO take appropriate arguments, return appropriate types (separate read handle for injected conversions?)
+                pub fn begin_triggered_read<SEQ>(self, _injected_sequence: SEQ) -> (Adc<$ADC, EnabledInjected>, AdcTriggeredConversion<$ADC, SEQ>) {
                     // TODO implement injected conversions
 
-                    Adc {
+                    (Adc {
                         rb: self.rb,
                         sample_time: self.sample_time,
                         resolution: self.resolution,
                         lshift: self.lshift,
                         _enabled: PhantomData,
-                    }
+                    },
+                    AdcTriggeredConversion {
+                        _adc: PhantomData,
+                        _injected_sequence: PhantomData,
+                    })
                 }
 
                 /// Disable ADC
@@ -728,9 +736,8 @@ macro_rules! adc_hal {
 
             impl Adc<$ADC, EnabledInjected> {
                 /// Disable the trigger and stop performing triggered reads of the selected analog channels
-                pub fn stop_triggered_reads(mut self) -> Adc<$ADC, EnabledIdle> {
+                pub fn end_triggered_read<SEQ>(self, _triggered_sequence: AdcTriggeredConversion<$ADC, SEQ>) -> Adc<$ADC, EnabledIdle> {
                     // TODO stop injected conversions
-                    // TODO take appropriate arguments (consume read token?)
 
                     Adc {
                         rb: self.rb,
